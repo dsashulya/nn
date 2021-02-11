@@ -66,8 +66,8 @@ class LinearBackprop(Backward):
         return DualTensor(self.X @ self.W, position=-1) + b
 
     def dX(self, grad: Tensor) -> Tensor:
-        """ Calculates dL/da through dual numbers """
-        batch_size, features = self.X.shape
+        """ Calculates dL/da (same as dL/dX) through dual numbers """
+        _, features = self.X.shape
         output = None
         for feature in range(features):
             # creates a dual number in the required position
@@ -81,6 +81,27 @@ class LinearBackprop(Backward):
                 # concatenating with other feature derivatives
                 output = np.concatenate((output, dx[:, None]), axis=1)
         return grad @ Tensor(output)
+
+    def dW(self, grad: Tensor) -> Tensor:
+        """ Calculates dL/dW through dual numbers """
+        # grad has shape same as f output
+        # find derivatives w.r.t each element of W
+        # scalar multiply grad by each of the derivatives to get dL/dw_i
+        # assemble the matrix of all partials dL/dw_i
+        rows, cols = self.W.shape
+        output = np.zeros_like(self.W.data)
+        for i in range(rows):
+            for j in range(cols):
+                # create DualTensor with a dual number in position [i,j]
+                b = Tensor(np.zeros_like(self.W.data))
+                b[i, j] = 1
+                # outputs the np.ndarray derivative w.r.t the element in position [i,j]
+                dw = self.fW(DualTensor(self.W, b)).b.data
+                dw = np.sum(grad.data * dw)
+                output[i, j] = dw
+        return Tensor(output)
+
+
 
     def backward(self, grad: Tensor) -> Tensor:
         # linear: vector -> vector

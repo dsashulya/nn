@@ -19,6 +19,10 @@ class Tensor:
     def shape(self):
         return self.data.shape
 
+    @property
+    def T(self):
+        return Tensor(self.data.T)
+
     def __getitem__(self, item):
         return self.data[item]
 
