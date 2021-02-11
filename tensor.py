@@ -2,44 +2,35 @@ import numpy as np
 from typing import Callable, Optional
 
 
-class Tensor:
-    def __init__(self, data: np.ndarray, backprop = None):
-        self.data: np.ndarray = data
-        self.grad: np.ndarray = np.zeros_like(data)
-        self.backprop = backprop
-
-    def zero_grad(self):
-        self.grad = np.zeros_like(self.grad)
-
-    def backward(self, grad):
-        if self.backprop is not None:
-            self.backprop.backward(grad)
-
-    @property
-    def shape(self):
-        return self.data.shape
-
-    @property
-    def T(self):
-        return Tensor(self.data.T)
-
-    def __getitem__(self, item):
-        return self.data[item]
-
-    def __setitem__(self, key, value):
-        self.data[key] = value
+class DualTensor:
+    def __init__(self, a: np.ndarray, b: np.ndarray = None):
+        self.a: np.ndarray = a
+        self.b: np.ndarray = b if b is not None else np.zeros_like(a)
 
     def __add__(self, other):
-        return Tensor(self.data + other.data)
+        return DualTensor(self.a + other.a, self.b + other.b)
 
     def __sub__(self, other):
-        return Tensor(self.data - other.data)
+        return DualTensor(self.a - other.a, self.b - other.b)
 
-    def __mul__(self, other):
-        return Tensor(self.data * other.data)
+    def dot_right(self, other: np.ndarray):
+        """ right is the position of the dual tensor """
+        return DualTensor(other @ self.a, other @ self.b)
 
-    def __matmul__(self, other):
-        return Tensor(self.data @ other.data)
+    def dot_left(self, other: np.ndarray):
+        """ left is the position of the dual tensor """
+        return DualTensor(self.a @ other, self.b @ other)
+
+    def non_negative(self):
+        """ Returns a new DualTensor where each element is max(element, 0) """
+        a, b = np.zeros_like(self.a), np.zeros_like(self.b)
+        rows, cols = self.a.shape
+        for i in range(rows):
+            for j in range(cols):
+                if self.a[i, j] < 0 or self.a[i, j] == 0 and self.b[i, j] < 0:
+                    continue
+                a[i, j], b[i, j] = self.a[i, j], self.b[i, j]
+        return DualTensor(a, b)
 
     def __str__(self) -> str:
-        return str(self.data)
+        return f"{self.a} + {self.b}e"
