@@ -22,17 +22,20 @@ class Tensor:
     def __getitem__(self, item):
         return self.data[item]
 
+    def __setitem__(self, key, value):
+        self.data[key] = value
+
     def __add__(self, other):
-        return self.data + other.data
+        return Tensor(self.data + other.data)
 
     def __sub__(self, other):
-        return self.data - other.data
+        return Tensor(self.data - other.data)
 
     def __mul__(self, other):
-        return self.data * other.data
+        return Tensor(self.data * other.data)
 
     def __matmul__(self, other):
-        return self.data @ other.data
+        return Tensor(self.data @ other.data)
 
-    def __str__(self):
-        return self.data
+    def __str__(self) -> str:
+        return str(self.data)
