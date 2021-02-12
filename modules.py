@@ -9,10 +9,13 @@ class Module:
         pass
 
     def forward(self, X: np.ndarray) -> np.ndarray:
-        return np.zeros_like(X)
+        pass
+
+    def step(self, alpha: float):
+        pass
 
     @staticmethod
-    def derivative(X: np.ndarray, func: Callable, grad: Optional[np.ndarray] = None,
+    def derivative(X: np.ndarray, func: Callable, grad: np.ndarray,
                    one_dim: Optional[bool] = False) -> np.ndarray:
         # find derivatives w.r.t each element of X
         # scalar multiply grad by each of the derivatives to get dL/dx_i
@@ -26,10 +29,7 @@ class Module:
                     b = np.zeros_like(X)
                     b[i, j] = 1
                     dx = func(DualTensor(X, b)).b
-                    if grad is not None:
-                        output[i, j] = np.sum(grad * dx)
-                    else:
-                        output[i, j] = dx
+                    output[i, j] = np.sum(grad * dx)
         else:
             for i, _ in enumerate(X):
                 b = np.zeros_like(output)
@@ -37,6 +37,9 @@ class Module:
                 db = func(DualTensor(X, b)).b
                 output[i] = np.sum(grad * db)
         return output
+
+    def backward(self, grad: np.ndarray):
+        pass
 
 
 class Linear(Module):
@@ -46,7 +49,7 @@ class Linear(Module):
         self.in_features: int = in_features
         self.out_features: int = out_features
         self.W: np.ndarray = np.random.rand(in_features, out_features)
-        self.b: np.ndarray = np.random.rand(1, out_features)
+        self.b: np.ndarray = np.random.rand(out_features)
 
         self.X = None
         self.derivative_W = None
@@ -85,9 +88,15 @@ class Linear(Module):
         # passed on: dL/dz * dz/da
         # dL/dW = dL/dz * dz/dW
         # dL/db = dL/dz * dz/db
+
         self.derivative_W = self.dW(grad)
         self.derivative_b = self.db(grad)
         return self.dX(grad)
+
+
+    def step(self, alpha):
+        self.b = self.b - alpha * self.derivative_b
+        self.W = self.W - alpha * self.derivative_W
 
 
 class ReLU(Module):
@@ -113,7 +122,6 @@ class ReLU(Module):
 class Softmax(Module):
     def __init__(self):
         super().__init__()
-        self.X = None
 
     @staticmethod
     def _softmax(x: np.ndarray) -> np.ndarray:
@@ -121,20 +129,8 @@ class Softmax(Module):
         x_ = x - np.max(x)
         return np.exp(x_) / np.sum(np.exp(x_))
 
-    def forward(self, X: np.ndarray) -> np.ndarray:
-        self.X = X.copy()
+    def __call__(self, X: np.ndarray) -> np.ndarray:
         return np.apply_along_axis(self._softmax, 1, X) if len(X.shape) > 1 else self._softmax(X)
-
-    def fX(self, X: DualTensor) -> DualTensor:
-        exp = np.exp(X)
-        sums = X.sum_columns()
-        return exp / sums
-
-    def dX(self, grad: np.ndarray) -> np.ndarray:
-        return self.derivative(self.X, self.fX, grad)
-
-    def backward(self, grad: np.ndarray) -> np.ndarray:
-        return self.dX(grad)
 
 
 class CrossEntropyLoss(Module):
@@ -148,17 +144,3 @@ class CrossEntropyLoss(Module):
     def loss(self) -> float:
         log = np.log(self.output + self.eps)
         return np.sum(-self.target * log)
-
-    def exp_fX(self, X: DualTensor) -> DualTensor:
-        """ Returns exponent of the loss function using DualTensors """
-        # exp(-y ln y_hat) = y_hat^{-y}
-        return (X ** -self.target).product_rows().product_columns()
-
-    def dX(self) -> np.ndarray:
-        # (exp L)' = L' exp(L) -> L' = (exp L)' / exp(L)
-        d_exp_loss = self.derivative(self.output, self.exp_fX)
-        return d_exp_loss / np.exp(self.loss)
-
-    def backward(self) -> np.ndarray:
-        print(f"true grad: {self.output - self.target}")
-        return self.dX()

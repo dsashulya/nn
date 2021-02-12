@@ -1,14 +1,4 @@
 import numpy as np
-from typing import Union, Tuple
-
-
-class DualNumber:
-    def __init__(self, a: Union[float, int], b: Union[float, int]):
-        self.a = a
-        self.b = b
-
-    def __mul__(self, other):
-        return DualNumber(self.a * other.a, self.a * other.b + self.b * other.a)
 
 
 class DualTensor:
@@ -40,33 +30,31 @@ class DualTensor:
         """ Element-wise exponential """
         return DualTensor(np.exp(self.a), np.exp(self.a) * self.b)
 
+    def ln(self):
+        """ Element-wise natural log """
+        return DualTensor(np.log(self.a), 1 / self.a * self.b)
+
+    def multiply(self, other: np.ndarray):
+        return DualTensor(self.a * other, self.b * other)
+
+    def sum(self):
+        return DualTensor(np.array(np.sum(self.a)), np.array(np.sum(self.b)))
+
+    def max(self):
+        return DualTensor(np.max(self.a, axis=1)[:,None], np.zeros((1, self.b.shape[1])))
+
+    def min(self):
+        return DualTensor(np.array(np.min(self.a)), np.min(self.b))
+
+    def mean_row(self):
+        return DualTensor(np.mean(self.a, axis=1)[:, None], np.mean(self.b, axis=1)[:, None])
+
+    def std_row(self):
+        return DualTensor(np.std(self.a, axis=1)[:, None], np.std(self.b, axis=1)[:, None])
+
     def sum_columns(self):
         """ Sums across columns """
         return DualTensor(np.sum(self.a, axis=1)[:, None], np.sum(self.b, axis=1)[:, None])
-
-    def sum_rows(self):
-        return DualTensor(np.sum(self.a), np.sum(self.b))
-
-    def product(self, a: np.ndarray, b: np.ndarray) -> Tuple[Union[float, int], Union[float, int]]:
-        total = DualNumber(a[0], b[0])
-        for i in range(1, len(a)):
-            total *= DualNumber(a[i], b[i])
-        return (total.a, total.b)
-
-    def product_rows(self):
-        """ Product across rows """
-        rows, _ = self.a.shape
-        a, b = np.zeros(rows), np.zeros(rows)
-        for row in range(rows):
-            a[row], b[row] = self.product(self.a[row], self.b[row])
-
-        return DualTensor(a, b)
-
-    def product_columns(self):
-        out = DualNumber(self.a[0], self.b[0])
-        for el in range(1, self.a.shape[0]):
-            out *= DualNumber(self.a[el], self.b[el])
-        return DualTensor(np.array(out.a), np.array(out.b))
 
     def mean(self):
         """ Returns mean across DualTensor """
@@ -74,14 +62,9 @@ class DualTensor:
 
     def non_negative(self):
         """ Returns a new DualTensor where each element is max(element, 0) """
-        a, b = np.zeros_like(self.a), np.zeros_like(self.b)
-        rows, cols = self.a.shape
-
-        for i in range(rows):
-            for j in range(cols):
-                if self.a[i, j] < 0 or self.a[i, j] == 0 and self.b[i, j] < 0:
-                    continue
-                a[i, j], b[i, j] = self.a[i, j], self.b[i, j]
+        a = np.maximum(np.zeros_like(self.a), self.a)
+        b = self.b.copy()
+        b[np.where(a == 0)] = 0
         return DualTensor(a, b)
 
     def __str__(self) -> str:
