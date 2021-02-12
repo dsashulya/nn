@@ -4,6 +4,7 @@ from typing import Callable, Optional
 
 
 class Module:
+    """ Base class for nn modules """
     def __init__(self):
         pass
 
@@ -11,7 +12,8 @@ class Module:
         return np.zeros_like(X)
 
     @staticmethod
-    def derivative(X: np.ndarray, grad: np.ndarray, func: Callable, one_dim: Optional[bool] = False) -> np.ndarray:
+    def derivative(X: np.ndarray, func: Callable, grad: Optional[np.ndarray] = None,
+                   one_dim: Optional[bool] = False) -> np.ndarray:
         # find derivatives w.r.t each element of X
         # scalar multiply grad by each of the derivatives to get dL/dx_i
         # assemble the matrix of all partials dL/dx_i
@@ -24,7 +26,10 @@ class Module:
                     b = np.zeros_like(X)
                     b[i, j] = 1
                     dx = func(DualTensor(X, b)).b
-                    output[i, j] = np.sum(grad * dx)
+                    if grad is not None:
+                        output[i, j] = np.sum(grad * dx)
+                    else:
+                        output[i, j] = dx
         else:
             for i, _ in enumerate(X):
                 b = np.zeros_like(output)
@@ -36,7 +41,6 @@ class Module:
 
 class Linear(Module):
     """ Class for Linear module backpropagation """
-
     def __init__(self, in_features: int, out_features: int):
         super().__init__()
         self.in_features: int = in_features
@@ -66,15 +70,15 @@ class Linear(Module):
 
     def dX(self, grad: np.ndarray) -> np.ndarray:
         """ Calculates dL/da (same as dL/dX) through dual numbers """
-        return self.derivative(self.X, grad, self.fX)
+        return self.derivative(self.X, self.fX, grad)
 
     def dW(self, grad: np.ndarray) -> np.ndarray:
         """ Calculates dL/dW through dual numbers """
-        return self.derivative(self.W, grad, self.fW)
+        return self.derivative(self.W, self.fW, grad)
 
     def db(self, grad: np.ndarray) -> np.ndarray:
         """ Calculates dL/db through dual numbers """
-        return self.derivative(self.b, grad, self.fb, one_dim=True)
+        return self.derivative(self.b, self.fb, grad, one_dim=True)
 
     def backward(self, grad: np.ndarray) -> np.ndarray:
         # received: dL/dz
@@ -100,7 +104,7 @@ class ReLU(Module):
         return X.non_negative()
 
     def dX(self, grad: np.ndarray) -> np.ndarray:
-        return self.derivative(self.X, grad, self.fX)
+        return self.derivative(self.X, self.fX, grad)
 
     def backward(self, grad: np.ndarray) -> np.ndarray:
         return self.dX(grad)
@@ -112,7 +116,7 @@ class Softmax(Module):
         self.X = None
 
     @staticmethod
-    def _softmax(self, x: np.ndarray) -> np.ndarray:
+    def _softmax(x: np.ndarray) -> np.ndarray:
         # to avoid overflow
         x_ = x - np.max(x)
         return np.exp(x_) / np.sum(np.exp(x_))
@@ -127,7 +131,7 @@ class Softmax(Module):
         return exp / sums
 
     def dX(self, grad: np.ndarray) -> np.ndarray:
-        return self.derivative(self.X, grad, self.fX)
+        return self.derivative(self.X, self.fX, grad)
 
     def backward(self, grad: np.ndarray) -> np.ndarray:
         return self.dX(grad)
@@ -141,9 +145,20 @@ class CrossEntropyLoss(Module):
         self.eps: float = eps
 
     @property
-    def loss(self) -> np.ndarray:
+    def loss(self) -> float:
         log = np.log(self.output + self.eps)
-        return np.mean(np.sum(-self.target * log, axis=1))
+        return np.sum(-self.target * log)
+
+    def exp_fX(self, X: DualTensor) -> DualTensor:
+        """ Returns exponent of the loss function using DualTensors """
+        # exp(-y ln y_hat) = y_hat^{-y}
+        return (X ** -self.target).product_rows().product_columns()
+
+    def dX(self) -> np.ndarray:
+        # (exp L)' = L' exp(L) -> L' = (exp L)' / exp(L)
+        d_exp_loss = self.derivative(self.output, self.exp_fX)
+        return d_exp_loss / np.exp(self.loss)
 
     def backward(self) -> np.ndarray:
-        return self.output - self.target
+        print(f"true grad: {self.output - self.target}")
+        return self.dX()
