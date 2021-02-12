@@ -1,6 +1,6 @@
 import numpy as np
 from tensor import DualTensor
-from typing import Callable, Optional
+from typing import Callable, Optional, NoReturn, List
 
 
 class Module:
@@ -144,3 +144,55 @@ class CrossEntropyLoss(Module):
     def loss(self) -> float:
         log = np.log(self.output + self.eps)
         return np.sum(-self.target * log)
+
+
+class Classifier:
+    def __init__(self, modules: List[Module], epochs: int = 20, alpha: float = 0.001):
+        self.modules = modules
+        self.epochs = epochs
+        self.alpha = alpha
+
+    def fit(self, X: np.ndarray, y: np.ndarray, batch_size=32) -> NoReturn:
+        rows = X.shape[0]
+        # reformat y to fit softmax output
+        t = np.zeros((rows, len(np.unique(y))))
+        for i, label in enumerate(y):
+            t[i][label] = 1
+
+        num_batches = X.shape[0] // batch_size
+        print("Starting first epoch...")
+        for epoch in range(self.epochs):
+            total_loss = 0
+            total_loss_val = 0
+            # breaking the data into batches
+            for from_ in range(0, rows, batch_size):
+                to = from_ + batch_size
+                if to >= rows:
+                    to = rows
+                # going forward
+                output = X[from_:to].copy()
+                for module in self.modules:
+                    output = module.forward(output)
+
+                output = Softmax()(output)
+                loss = CrossEntropyLoss(output, t[from_:to])
+                total_loss += loss.loss
+
+                d = output - t[from_:to]
+                # going backward
+                for module in reversed(self.modules):
+                    d = module.backward(d)
+                    module.step(self.alpha)
+
+            print(f"Epoch {epoch + 1} finished with avg train loss of {total_loss / num_batches}")
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        output = X.copy()
+        for module in self.modules:
+            output = module.forward(output)
+
+        return output
+
+    def predict(self, X) -> np.ndarray:
+        p = self.predict_proba(X)
+        return np.argmax(p, axis=1)
